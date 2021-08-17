@@ -45,22 +45,45 @@ function Initialize-GitRepo() {
     }
     git remote add origin $env:DRONE_REMOTE_URL
 
+    $gitTagRef = ""
     if (!$env:DRONE_TAG) {
-        $gitTagLines = "$(git ls-remote -q --refs --tags)".Split("\n")
-        if ($gitTagLines -and $gitTagLines[-1] -match '([\w\s]*refs/tags/)(v\d*\.\d*\.\d*(-\w+)?)') {
-            $env:CI_SHARE_GIT_TAG = $MATCHES[2]
-        }
-        else {
-            $env:CI_SHARE_GIT_TAG = "v0.0.0-dev"
+        $gitTagRefLines = "$(git ls-remote -q --refs --tags origin v*)".Split("\n")
+        if ($gitTagRefLines) {
+            $gitTagRef = $gitTagRefLines[-1]
         }
     }
     else {
-        $env:CI_SHARE_GIT_TAG = $env:DRONE_TAG
+        $gitTagRef = $env:DRONE_TAG
     }
-    if ($env:CI_SHARE_GIT_TAG -match 'v(\d*\.\d*\.\d*)(-)?(\w+)?') {
-        $env:CI_SHARE_GIT_TAG_SHORT = $MATCHES[1]
-        $env:CI_SHARE_GIT_TAG_PRERELEASE = $MATCHES[3]
+
+    if ($gitTagRef -match '^(\w*?)?(?:\s*?refs/tags/)?v(((\d*)\.(\d*)\.(\d*))(?:-([\w\.]+))?)$') {
+        $env:CI_SHARE_GIT_SEMVER = $MATCHES[1]
+        $env:CI_SHARE_GIT_SEMVER_SHORT = $MATCHES[3]
+        $env:CI_SHARE_GIT_SEMVER_MAJOR = $MATCHES[4]
+        $env:CI_SHARE_GIT_SEMVER_MINOR = $MATCHES[5]
+        $env:CI_SHARE_GIT_SEMVER_PATCH = $MATCHES[6]
+        $env:CI_SHARE_GIT_SEMVER_PRERELEASE = $MATCHES[7]
+        $env:CI_SHARE_GIT_TAG_ID = $MATCHES[2]
     }
+    else {
+        $env:CI_SHARE_GIT_SEMVER = "0.0.0-dev"
+        $env:CI_SHARE_GIT_SEMVER_SHORT = "0.0.0"
+        $env:CI_SHARE_GIT_SEMVER_MAJOR = "0"
+        $env:CI_SHARE_GIT_SEMVER_MINOR = "0"
+        $env:CI_SHARE_GIT_SEMVER_PATCH = "0"
+        $env:CI_SHARE_GIT_SEMVER_PRERELEASE = "dev"
+    }
+
+    if (!$env:DRONE_TAG -and !$env:CI_SHARE_GIT_SEMVER_PRERELEASE) {
+        if ($env:DRONE_COMMIT_SHA -ne $env:CI_SHARE_GIT_TAG_ID) {
+            $env:CI_SHARE_GIT_SEMVER_PATCH = [Int]$env:CI_SHARE_GIT_SEMVER_PATCH + 1
+        }
+        $env:CI_SHARE_GIT_SEMVER_PRERELEASE = "dev"
+        $env:CI_SHARE_GIT_SEMVER_SHORT = "$env:CI_SHARE_GIT_SEMVER_MAJOR.$env:CI_SHARE_GIT_SEMVER_MINOR.$env:CI_SHARE_GIT_SEMVER_PATCH"
+        $env:CI_SHARE_GIT_SEMVER = "$env:CI_SHARE_GIT_SEMVER_SHORT-$env:CI_SHARE_GIT_SEMVER_PRERELEASE"
+    }
+
+    Write-Output "Git SemVer: $env:CI_SHARE_GIT_SEMVER"
 }
 
 function Get-GitCommit() {
@@ -85,11 +108,22 @@ function Get-GitTag() {
     # fetch the repo branch
     git fetch origin $env:DRONE_REPO_BRANCH
     if (git branch -r --contains $env:DRONE_TAG --format "%(refname:short)" "origin/$env:DRONE_REPO_BRANCH") {
-        $env:CI_SHARE_GIT_TAG_RELEASE = "true"
+        $env:CI_SHARE_GIT_SEMVER_DRAFT = ""
+        $env:DRONE_COMMIT_BRANCH = $env:DRONE_REPO_BRANCH
     }
     else {
-        $env:CI_SHARE_GIT_TAG_RELEASE = ""
+        $env:CI_SHARE_GIT_SEMVER_DRAFT = "true"
+        $env:DRONE_COMMIT_BRANCH = "draft"
+        $env:CI_SHARE_GIT_SEMVER_PRERELEASE = "rc"
+        $env:CI_SHARE_GIT_SEMVER_SHORT = "$env:CI_SHARE_GIT_SEMVER_MAJOR.$env:CI_SHARE_GIT_SEMVER_MINOR.$env:CI_SHARE_GIT_SEMVER_PATCH"
+        $env:CI_SHARE_GIT_SEMVER = "$env:CI_SHARE_GIT_SEMVER_SHORT-$env:CI_SHARE_GIT_SEMVER_PRERELEASE"
     }
+}
+
+function Get-GitBuildInfo() {
+    $env:CI_SHARE_GIT_COMMIT_SHA_SHORT = (git rev-parse --short HEAD)
+    $env:CI_SHARE_GIT_BUILD_INFO = "+$env:DRONE_COMMIT_BRANCH.$(Get-Date -Format 'yyyyMMdd').$('{0:d6}' -f [convert]::ToInt32($env:DRONE_BUILD_NUMBER)).$env:CI_SHARE_GIT_COMMIT_SHA_SHORT"
+    Write-Output "Git build info: $env:CI_SHARE_GIT_BUILD_INFO"
 }
 
 Initialize-Gitenvironment
@@ -109,5 +143,7 @@ switch ($env:DRONE_BUILD_EVENT) {
         break
     }
 }
+
+Get-GitBuildInfo
 
 Write-Output "+ Git clone done!"
