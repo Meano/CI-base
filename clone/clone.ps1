@@ -47,9 +47,9 @@ function Initialize-GitRepo() {
 
     $gitTagRef = ""
     if (!$env:DRONE_TAG) {
-        $gitTagRefLines = "$(git ls-remote -q --refs --tags origin v*)".Split("\n")
+        $gitTagRefLines = $(git ls-remote -q --refs --sort='v:refname' --tags origin 'v*')
         if ($gitTagRefLines) {
-            $gitTagRef = $gitTagRefLines[-1]
+            $gitTagRef = $gitTagRefLines.Split("\n")[-1]
         }
     }
     else {
@@ -57,7 +57,7 @@ function Initialize-GitRepo() {
     }
 
     if ($gitTagRef -match '^(\w*?)?(?:\s*?refs/tags/)?v(((\d*)\.(\d*)\.(\d*))(?:-([\w\.]+))?)$') {
-        $env:CI_SHARE_GIT_SEMVER = $MATCHES[1]
+        $env:CI_SHARE_GIT_SEMVER = $MATCHES[2]
         $env:CI_SHARE_GIT_SEMVER_SHORT = $MATCHES[3]
         $env:CI_SHARE_GIT_SEMVER_MAJOR = $MATCHES[4]
         $env:CI_SHARE_GIT_SEMVER_MINOR = $MATCHES[5]
@@ -105,6 +105,13 @@ function Get-GitTag() {
     Write-Output "+ Get git tag"
     git fetch $FLAGS origin -t "+refs/tags/${env:DRONE_TAG}:"
     git checkout -qf FETCH_HEAD
+
+    # check if the release tags on the default branch of the repo
+    if ($env:CI_SHARE_GIT_SEMVER_PRERELEASE) {
+        $env:DRONE_COMMIT_BRANCH = "tag"
+        return
+    }
+
     # fetch the repo branch
     git fetch origin $env:DRONE_REPO_BRANCH
     if (git branch -r --contains $env:DRONE_TAG --format "%(refname:short)" "origin/$env:DRONE_REPO_BRANCH") {
@@ -114,16 +121,14 @@ function Get-GitTag() {
     else {
         $env:CI_SHARE_GIT_SEMVER_DRAFT = "true"
         $env:DRONE_COMMIT_BRANCH = "draft"
-        $env:CI_SHARE_GIT_SEMVER_PRERELEASE = "rc"
-        $env:CI_SHARE_GIT_SEMVER_SHORT = "$env:CI_SHARE_GIT_SEMVER_MAJOR.$env:CI_SHARE_GIT_SEMVER_MINOR.$env:CI_SHARE_GIT_SEMVER_PATCH"
-        $env:CI_SHARE_GIT_SEMVER = "$env:CI_SHARE_GIT_SEMVER_SHORT-$env:CI_SHARE_GIT_SEMVER_PRERELEASE"
+        Write-Output "+ The release tag ($env:DRONE_TAG) is not belong to the default branch ($env:DRONE_REPO_BRANCH) of the repo."
     }
 }
 
 function Get-GitBuildInfo() {
     $env:CI_SHARE_GIT_COMMIT_SHA_SHORT = (git rev-parse --short HEAD)
     $env:CI_SHARE_GIT_BUILD_INFO = "+$env:DRONE_COMMIT_BRANCH.$(Get-Date -Format 'yyyyMMdd').$('{0:d6}' -f [convert]::ToInt32($env:DRONE_BUILD_NUMBER)).$env:CI_SHARE_GIT_COMMIT_SHA_SHORT"
-    Write-Output "Git build info: $env:CI_SHARE_GIT_BUILD_INFO"
+    Write-Output "+ Git build info: $env:CI_SHARE_GIT_BUILD_INFO"
 }
 
 Initialize-Gitenvironment
