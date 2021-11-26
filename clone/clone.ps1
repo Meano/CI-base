@@ -45,6 +45,8 @@ function Initialize-GitRepo() {
     }
     git remote add origin $env:DRONE_REMOTE_URL
 
+    git config versionsort.suffix -
+
     $gitTagRef = ""
     if (!$env:DRONE_TAG) {
         $gitTagRefLines = $(git ls-remote -q --refs --sort='v:refname' --tags origin 'v*')
