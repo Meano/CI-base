@@ -58,7 +58,7 @@ function Initialize-GitRepo() {
         $gitTagRef = $env:DRONE_TAG
     }
 
-    if ($gitTagRef -match '^(\w*?)?(?:\s*?refs/tags/)?v(((\d*)\.(\d*)\.(\d*))(?:-([\w\.]+))?)$') {
+    if ($gitTagRef -match '^(\w*?)?(?:\s*?refs/tags/)?v(((\d*)\.(\d*)\.(\d*))(?:-([\w\.\-]+))?)$') {
         $env:CI_SHARE_GIT_SEMVER = $MATCHES[2]
         $env:CI_SHARE_GIT_SEMVER_SHORT = $MATCHES[3]
         $env:CI_SHARE_GIT_SEMVER_MAJOR = $MATCHES[4]
